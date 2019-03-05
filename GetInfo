@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+use MP3::Info;
+use MP3::Tag;
+use Audio::FLAC::Header;
+
+my $short = shift;
+$short = ($short eq "-s");
+
+while (<*.mp3>)
+{
+    print "$_:\n";
+    $tag = get_mp3tag($_, 2);
+    if ($tag)
+    {
+	    $mp3 = MP3::Tag->new($_);
+	    $mp3->get_tags();
+	    $v2 = $mp3->{ID3v2};
+	print "  Title       : $tag->{TITLE}\n";
+	print "  Artist      : $tag->{ARTIST}\n";
+	($comp, undef) = $v2->get_frame("TCOM");
+	print "  Composer    : $comp\n" if defined $comp and $comp ne "";
+	print "  Album       : $tag->{ALBUM}\n";
+	if (!$short)
+	{
+	    print "  Tracknum    : $tag->{TRACKNUM}\n";
+	    print "  Genre       : $tag->{GENRE}\n";
+	    print "  Year        : $tag->{YEAR}\n";
+	    #print "  Comment     : $tag->{COMMENT}\n" if defined $tag->{COMMENT} and $tag->{COMMENT} ne "";
+            if (defined $v2)
+            {
+		($tsop, undef) = $v2->get_frame("TSOP");
+		if (defined $tsop)
+		{
+		    print "  Artist Sort : $tsop\n";
+		}
+		($tsoa, undef) = $v2->get_frame("TSOA");
+		if (defined $tsoa)
+		{
+		    print "  Album Sort  : $tsoa\n";
+		}
+            }
+	}
+
+    }
+    if (!$short)
+    {
+	$info = get_mp3info ($_);
+	print "  Sample Rate : $info->{FREQUENCY} KHz\n";
+	print "  Bitrate     : $info->{BITRATE}kbit";
+	if ($info->{VBR})
+	{
+	    print" (VBR)";
+	}
+	print "\n";
+	print "  Time        : $info->{TIME}\n";
+    }
+}
+
+while (<*.flac>)
+{
+    print "$_:\n";
+    my $flac = Audio::FLAC::Header->new($_);
+    my $tags = $flac->tags();
+    if ($tags)
+    {
+	print "  Title       : $tags->{TITLE}\n";
+	print "  Artist      : $tags->{ARTIST}\n";
+	print "  Album       : $tags->{ALBUM}\n";
+	if (!$short)
+	{
+	    print "  Tracknum    : $tags->{TRACKNUMBER}\n";
+	    print "  Genre       : $tags->{GENRE}\n";
+            $year = $tags->{YEAR};
+	    $year = $tags->{DATE} if (!$year);
+	    print "  Year        : ${year}\n" if ($year);
+	    if (defined $tags->{ARTISTSORT})
+	    {
+	        print "  Artist Sort : $tags->{ARTISTSORT}\n";
+	    }
+	    if (defined $tags->{ALBUMSORT})
+	    {
+	        print "  Album Sort  : $tags->{ALBUMSORT}\n";
+	    }
+	}
+
+    }
+    if (!$short)
+    {
+	$info = $flac->info();
+        $sampleRate = $info->{SAMPLERATE} / 1000;
+        print "  Sample Rate : ${sampleRate} kHz\n";
+        $bitRate = int($flac->{bitRate} / 1000);
+	print "  Bitrate     : ${bitRate}kbps\n";
+        $min = $flac->{trackLengthMinutes};
+        $sec = sprintf("%02d", $flac->{trackLengthSeconds});
+	print "  Time        : ${min}:${sec}\n";
+    }
+}

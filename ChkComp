@@ -1,0 +1,36 @@
+#!/usr/bin/perl
+
+use MP3::Info;
+use MP3::Tag;
+use Cwd;
+
+$d = shift;
+chdir($d);
+my $sdir = Cwd::cwd;
+%artists = ();
+$tcmp = 0;
+$alb = undef;
+
+while(<*.mp3>) {
+    $tag = get_mp3tag($_, 2);
+    if ($tag) {
+	    $mp3 = MP3::Tag->new($_);
+	    $mp3->get_tags();
+	    $v2 = $mp3->{ID3v2};
+		$artist = $tag->{ARTIST};
+		$artists{$artist} = 1;
+		if (not defined $alb) {
+		    $alb = $tag->{ALBUM};
+		}
+		my ($extsop, undef) = $v2->get_frame("TCMP");
+		if (defined $extsop) {
+		    $tcmp = 1;
+		}
+	}
+}
+
+$acnt = scalar keys %artists;
+if ($acnt > 1 && $tcmp == 0) {
+	print "Album: $alb\t";
+	print "Cwd: $sdir\n";
+}

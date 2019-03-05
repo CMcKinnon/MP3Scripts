@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+
+use strict;
+use MP3::Info;
+use MP3::Tag;
+use Getopt::Std;
+
+my %option = ();
+
+getopts("d", \%option);
+
+while (<*.mp3>)
+{
+    my $tag = get_mp3tag($_);
+    if ($tag)
+    {
+        my $title = $tag->{TITLE};
+        my $tracknum = $tag->{TRACKNUM};
+        my $newname = sprintf("%02d_%s.mp3", $tracknum, fix_name($title));
+        print "rename $_ to $newname\n";
+	if (!$option{d})
+	{
+            rename($_, $newname);
+	}
+    }
+}
+
+sub fix_name
+{
+    my $name = shift;
+
+    $name =~ s/&/and/g;
+    $name =~ s/[\(\)\[\]\{\}\,\'\.\?\/\\:"!<>]//g;
+    $name =~ s/#/Number/g;
+    $name =~ s/ +/ /g;
+    $name =~ s/ $//g;
+    $name =~ s/ /_/g;
+
+    return $name;
+}

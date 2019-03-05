@@ -1,0 +1,15 @@
+#!/bin/sh
+
+for dir in `find /store/music/ -mindepth 3 -type d -print` ; do
+#for dir in `find /store/music -mindepth 3 -type d -print` ; do
+	cd "$dir"
+	if [ -f cover.jpg ] ; then
+		id3v2 -l `ls *.mp3|tail -1`|grep APIC > /dev/null 2>&1
+		if [ $? -eq 0 ] ; then
+			echo "$dir already has embedded artwork; skipping"
+		else
+			eyeD3 -2 --to-v2.3 --add-image=cover.jpg:FRONT_COVER *.mp3
+		fi
+		rm -f cover.jpg
+	fi
+done

@@ -1,0 +1,3 @@
+#!/bin/sh
+
+eyeD3 -2 --to-v2.3 --add-image=$1:FRONT_COVER *.mp3

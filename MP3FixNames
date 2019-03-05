@@ -1,0 +1,15 @@
+#!/usr/bin/perl
+
+use strict;
+use MP3::Info;
+use MP3::Tag;
+
+while (<*.mp3>)
+{
+    my $tag = get_mp3tag($_);
+    if ($tag)
+    {
+        my $title = $tag->{TITLE};
+        print "id3v2 -2 -t \"$title\" $_\n";
+    }
+}

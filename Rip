@@ -1,0 +1,464 @@
+#!/usr/bin/perl
+
+use strict;
+use CDDB_get qw(get_cddb get_discids);
+use Getopt::Std;
+use MP3::Tag;
+use MP3::Info;
+use File::Basename;
+use Audio::FLAC::Header;
+use Time::HiRes qw(time);
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+my $lameStandard = "lame -V 2 --vbr-new ";
+my $lameExtreme = "lame -V 0 --vbr-new ";
+my $flacCmd = "flac -8 ";
+my $startTime = time();
+
+my %option = ();
+
+getopts("wthcxrRsfnO:", \%option);
+
+if ($option{h})
+{
+    VERSION_MESSAGE();
+    HELP_MESSAGE();
+}
+
+my $encoderCmd = "";
+my $outputParam = " ";
+my $extension = "mp3";
+my $offset = 0;
+
+if ($option{O})
+{
+    $offset = $option{O};
+}
+
+if (!$option{f})
+{
+    if ($option{s})
+    {
+	$encoderCmd = $lameStandard;
+    }
+    else
+    {
+	$encoderCmd = $lameExtreme;
+    }
+}
+else
+{
+    $encoderCmd = $flacCmd;
+    $outputParam = " -o ";
+    $extension = "flac";
+}
+
+my $tmpfilename = "/tmp/rip-$$";
+
+my %config;
+
+$config{CDDB_HOST} = "freedb.freedb.org";
+$config{CDDB_PORT} = 8880;
+$config{CDDB_MODE} = "cddb";
+#$config{CD_DEVICE} = "/dev/scd0";
+$config{input} = 1;
+
+my %cd;
+
+if (!$option{w} and !$option{x} and !$option{R})
+{
+    %cd = get_cddb(\%config);
+}
+if ($option{r})
+{
+    %cd = get_cddb(\%config);
+}
+
+open FH, ">$tmpfilename" || die "Can't open temp file for writing";
+
+if ($option{R})
+{
+    my $wroteheader = 0;
+    opendir (DIR, ".");
+    my @files = readdir(DIR);
+    closedir(DIR);
+    my @sortedFiles = sort @files;
+    foreach (@sortedFiles)
+    {
+        my $entry = $_;
+        next unless $entry =~ /^(.+)\.mp3$/;
+	my $ltag = get_mp3tag($entry);
+	my $lmp3 = MP3::Tag->new($entry);
+	$lmp3->get_tags();
+	my $lv2 = $lmp3->{ID3v2};
+	my $ltsop;
+	($ltsop, undef) = $lv2->get_frame("TSOP");
+	my $ltsoa;
+	($ltsoa, undef) = $lv2->get_frame("TSOA");
+	if ($wroteheader == 0)
+	{
+	    print FH "cd|artist: " . $ltag->{ARTIST} . "\n";
+	    print FH "cd|artistdir: .\n";
+	    print FH "cd|album: " . $ltag->{ALBUM} . "\n";
+	    print FH "cd|albumdir: .\n";
+	    print FH "cd|tsop: $ltsop\n" if defined $ltsop;
+	    print FH "cd|tsoa: $ltsoa\n" if defined $ltsoa;
+	    print FH "cd|genre: " . $ltag->{GENRE} . "\n";
+	    print FH "cd|year: " . $ltag->{YEAR} . "\n";
+	    print FH "\n";
+	    $wroteheader = 1;
+	}
+	my $newfile = $entry;
+	if ($option{f})
+	{
+	    $newfile =~ s/\.mp3$/\.flac/;
+	}
+	my $ltr = substr($entry, 0, 2);
+	print FH "$ltr|title: " . $ltag->{TITLE} . "\n";
+	print FH "$ltr|file: $newfile\n";
+	print FH "$ltr|artist: " . $ltag->{ARTIST} . "\n";
+	print FH "$ltr|tsop: $ltsop\n" if defined $ltsop;
+	print FH "$ltr|genre: " . $ltag->{GENRE} . "\n";
+	print FH "$ltr|year: " . $ltag->{YEAR} . "\n";
+	print FH "\n";
+    }
+}
+else
+{
+    if (defined $cd{title})
+    {
+        my $ntsop = $cd{artist};
+        if ($option{t} && $ntsop =~ / /)
+        {
+            my @artistWords = split(/ /, $ntsop);
+            my $firstWord = shift(@artistWords);
+            $ntsop = join(' ', @artistWords) . ", " . $firstWord;
+        }
+	print FH "cd|artist: $cd{artist}\n" if !$option{c};
+	print FH "cd|artistdir: " . fix_name($cd{artist}) . "\n";
+	print FH "cd|album: $cd{title}\n";
+	print FH "cd|albumdir: " . fix_name($cd{title}) . "\n";
+	print FH "cd|tsop: " . $ntsop . "\n" if $option{t};
+	print FH "cd|tsoa: " . $cd{title} . "\n" if $option{t};
+	print FH "cd|genre: " . ($cd{genre} || "Rock") . "\n";
+	print FH "cd|year: $cd{year}\n";
+	print FH "cd|offset: $offset\n" if $offset > 0;
+	print FH "\n";
+
+	my $n = 1;
+	my $tr;
+	my $fn;
+	my $atn;
+
+	foreach my $i (@{$cd{track}})
+	{
+	    $tr = sprintf("%02d", $n);
+            $atn = sprintf("%02d", int($n) + int($offset));
+	    $fn = $atn . "_" . fix_name($i) . "." . $extension;
+	    print FH "$tr|title: $i\n";
+	    print FH "$tr|file: $fn\n";
+	    if ($option{c})
+	    {
+		print FH "$tr|artist: $i\n";
+		print FH "$tr|tsop: $i\n" if $option{t};
+		print FH "$tr|genre: " . ($cd{genre} || "Rock") . "\n";
+		print FH "$tr|year: $cd{year}\n";
+	    }
+	    print FH "\n";
+	    $n++;
+	}
+    }
+    else
+    {
+	print FH "cd|artist: \n" if !$option{c};
+	print FH "cd|artistdir: \n";
+	print FH "cd|album: \n";
+	print FH "cd|albumdir: \n";
+	print FH "cd|tsop: \n" if $option{t};
+	print FH "cd|tsoa: \n" if $option{t};
+	print FH "cd|genre: Rock\n";
+	print FH "cd|year: \n";
+	print FH "\n";
+
+	my $ids;
+	my $numtracks;
+
+	if (!$option{w})
+	{
+	    $ids = get_discids($config{CD_DEVICE});
+	    $numtracks = $ids->[1];
+	}
+	else
+	{
+	    $numtracks = count_wavs();
+	}
+
+	my $n = 1;
+	my $tr;
+	my $fn;
+	my $atn;
+
+	while ($n <= $numtracks)
+	{
+	    $tr = sprintf("%02d", $n);
+            $atn = sprintf("%02d", int($n) + int($offset));
+	    $fn = $atn . "_" . "." . $extension;
+	    print FH "$tr|title: \n";
+	    print FH "$tr|file: $fn\n";
+	    if ($option{c})
+	    {
+		print FH "$tr|artist: \n";
+		print FH "$tr|tsop: \n" if $option{t};
+		print FH "$tr|genre: Rock\n";
+		print FH "$tr|year: \n";
+	    }
+	    print FH "\n";
+	    $n++;
+	}
+    }
+}
+
+close FH;
+
+if (!$option{n} and !$option{R})
+{
+    system "vi $tmpfilename";
+}
+
+open FH, "<$tmpfilename" || die "Can't open temp file for reading";
+
+my $tn;
+my %tracks;
+
+while (<FH>)
+{
+    chomp;
+    next if /^$/;
+    if (/^abort/)
+    {
+        close(FH);
+        unlink $tmpfilename;
+	exit;
+    }
+    if (/^(..)\|(\w+): (.*)$/)
+    {
+        my $trnum;
+	if ($1 == "cd")
+	{
+	    $trnum = $1;
+	}
+	else
+	{
+	    $trnum = int($1);
+	}
+	my $key = $2;
+	my $val = $3;
+	$tracks{$trnum}{$key} = $val;
+    }
+}
+
+close FH;
+
+if (! -e $tracks{cd}{artistdir})
+{
+    mkdir $tracks{cd}{artistdir};
+    chmod 0777, $tracks{cd}{artistdir};
+}
+
+$tracks{cd}{albumdir} = $tracks{cd}{artistdir} . "/" . $tracks{cd}{albumdir};
+
+if (! -e $tracks{cd}{albumdir})
+{
+    mkdir $tracks{cd}{albumdir};
+    chmod 0777, $tracks{cd}{albumdir};
+}
+
+my $cmd;
+
+if (!$option{w})
+{
+    foreach my $track (sort { int($a) <=> int($b) } keys %tracks)
+    {
+	next if $track == "cd";
+        $tn = sprintf("%02d", $track);
+	print "Ripping track $track: $tracks{$track}{title}\n\n";
+
+	$cmd = "cdparanoia $track $tn.wav";
+	system $cmd;
+    }
+}
+
+my $lameErrors = 0;
+my %tags = ();
+
+foreach my $track (sort { int($a) <=> int($b) } keys %tracks)
+{
+    %tags = ();
+    next if $track == "cd";
+    my $year = $tracks{$track}{year} || $tracks{cd}{year};
+    my $artist = $tracks{$track}{artist} || $tracks{cd}{artist};
+    my $genre = $tracks{$track}{genre} || $tracks{cd}{genre};
+    my $mp3file = $tracks{cd}{albumdir} . "/" . $tracks{$track}{file};
+
+    if ($option{R})
+    {
+        unlink($mp3file);
+    }
+
+    $tags{artist} = $artist;
+    $tags{tracknum} = int($track) + int($offset);
+    $tags{album} = $tracks{cd}{album};
+    $tags{title} = $tracks{$track}{title};
+    $tags{year} = $year;
+    $tags{genre} = $genre;
+    my $tsop = $tracks{$track}{tsop} || $tracks{cd}{tsop};
+    if (defined $tsop)
+    {
+        $tags{tsop} = $tsop;
+    }
+    my $tsoa = $tracks{cd}{tsoa};
+    if (defined $tsoa)
+    {
+        $tags{tsoa} = $tsoa;
+    }
+
+    $tn = sprintf("%02d", $track);
+    $cmd = $encoderCmd;
+    $cmd .= "$tn.wav ";
+    $cmd .= $outputParam;
+    $cmd .= "\"$mp3file\"";
+    if ($option{f})
+    {
+	my $tagOpts = get_flac_tag_opts();
+	$cmd .= $tagOpts;
+    }
+
+    print "Encoding track $track: $tracks{$track}{title}\n\n";
+
+    system $cmd;
+
+    if ($? == 0)
+    {
+        set_tags($mp3file);
+	if (!$option{w})
+	{
+	    unlink "$tn.wav";
+	}
+    }
+    else
+    {
+        print "Error in Lame command; not deleting files\n";
+	$lameErrors++;
+    }
+}
+
+if ($lameErrors == 0)
+{
+    unlink $tmpfilename;
+}
+
+if (!$option{w})
+{
+    system "eject" ;
+}
+
+my $endTime = time();
+
+printf("Elapsed time: %.2f seconds\n", $endTime - $startTime);
+
+sub fix_name
+{
+    my $name = shift;
+
+    $name =~ s/&/and/g;
+    $name =~ s/[\(\)\[\]\{\}\,\'\.\?\/\\:"!<>]//g;
+    $name =~ s/#/Number/g;
+    $name =~ s/ +/ /g;
+    $name =~ s/ $//g;
+    $name =~ s/ /_/g;
+
+    return $name;
+}
+
+sub count_wavs
+{
+    opendir (DIR, ".");
+    my $max = 0;
+    while (my $entry = readdir(DIR))
+    {
+        next unless $entry =~ /^(\d+)\.wav$/;
+	if (int($1) > $max)
+	{
+	    $max = int($1);
+	}
+    }
+    closedir(DIR);
+    return $max;
+}
+
+sub get_flac_tag_opts
+{
+    my $opt = "";
+
+    $opt .= " -T \"ARTIST=$tags{artist}\" ";
+    $opt .= " -T \"TRACKNUMBER=$tags{tracknum}\" ";
+    $opt .= " -T \"ALBUM=$tags{album}\" ";
+    $opt .= " -T \"TITLE=$tags{title}\" ";
+    $opt .= " -T \"YEAR=$tags{year}\" " if ($tags{year});
+    $opt .= " -T \"GENRE=$tags{genre}\" " if ($tags{genre});
+    $opt .= " -T \"ARTISTSORT=$tags{tsop}\" " if ($tags{tsop});
+    $opt .= " -T \"ALBUMSORT=$tags{tsoa}\" " if ($tags{tsoa});
+
+    return $opt;
+}
+
+sub set_tags
+{
+    my $file = shift;
+
+    if (!$option{f})
+    {
+	my $mp3 = MP3::Tag->new($file);
+	$mp3->get_tags();
+	my $v2 = $mp3->new_tag("ID3v2");
+
+	$v2->add_frame("TPE1", $tags{artist});
+	$v2->add_frame("TRCK", $tags{tracknum});
+	$v2->add_frame("TALB", $tags{album});
+	$v2->add_frame("TIT2", $tags{title});
+	$v2->add_frame("TYER", $tags{year}) if ($tags{year});
+	$v2->add_frame("TCON", $tags{genre}) if ($tags{genre});
+	$v2->add_frame("TSOP", $tags{tsop}) if ($tags{tsop});
+	$v2->add_frame("TSOA", $tags{tsoa}) if ($tags{tsoa});
+
+	$v2->write_tag();
+	$mp3->close();
+    }
+}
+
+sub HELP_MESSAGE()
+{
+    print "Usage: Rip [OPTION]...\n";
+    print "Rip a CD (or set of .wav files) to MP3 or Flac format\n\n";
+    print " -h\tdisplay this help and exit\n";
+    print " -w\trip from existing wav files (must be 01.wav, 02.wav, etc)\n";
+    print " -t\tgenerate TSOP/TSOA tag entries in tag file\n";
+    print " -c\tgenerate tags for a compilation album\n";
+    print " -x\tdon't attempt CDDB lookup\n";
+    print " -r\tdo CDDB lookup even when using -w\n";
+    print " -R\tre-Rip Cd using tags in current .mp3 files\n";
+    print " -s\tuse LAME standard preset (default is extreme)\n";
+    print " -f\tencode as Flac instead of MP3\n";
+    print " -n\tdon't edit track info file\n";
+    print " -O n\tadd this amount to track numbers\n";
+    print "\nOptions may be combined\n";
+    exit;
+}
+
+sub VERSION_MESSAGE()
+{
+    print "Rip v1.0 (C) Copyright 2005-2009 Corey McKinnon\n";
+}
+
+#eyeD3 -2 --to-v2.3 --add-image=cover.jpg:FRONT_COVER *.mp3

@@ -1,0 +1,23 @@
+#!/usr/bin/perl
+
+use strict;
+use MP3::Tag;
+
+my ($file, $mp3, $v2);
+
+while ($#ARGV >= 0)
+{
+    $file = shift;
+    $mp3 = MP3::Tag->new($file);
+    $mp3->get_tags();
+    $v2 = $mp3->{ID3v2};
+    my ($extsop, undef) = $v2->get_frame("TDRC");
+    print "$file: ";
+    if (defined $extsop)
+    {
+        print "found TDRC: " . $extsop . "\n";
+        $v2->change_frame("TDRC", undef);
+        $v2->write_tag();
+    }
+    $mp3->close();
+}

@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+
+use MP3::Info;
+use MP3::Tag;
+use Audio::FLAC::Header;
+
+my $totalTime = 0;
+
+while (<*.mp3>)
+{
+    $tag = get_mp3tag($_);
+    $info = get_mp3info ($_);
+    ($min, $sec) = split(/:/, $info->{TIME});
+    $totalTime += (($min * 60) + $sec);
+    if ($tag)
+    {
+        $trnum = sprintf("%02d", $tag->{TRACKNUM});
+	print "$trnum $tag->{TITLE}: $info->{TIME}\n";
+    }
+}
+
+while (<*.flac>)
+{
+    my $flac = Audio::FLAC::Header->new($_);
+    my $tags = $flac->tags();
+    $info = $flac->info();
+    $min = $flac->{trackLengthMinutes};
+    $sec = sprintf("%02d", $flac->{trackLengthSeconds});
+    $totalTime += (($min * 60) + $flac->{trackLengthSeconds});
+    if ($tags)
+    {
+        $trnum = sprintf("%02d", $tags->{TRACKNUMBER});
+	print "$trnum $tags->{TITLE}: ${min}:${sec}\n";
+    }
+}
+
+if ($totalTime != 0)
+{
+    $min = int($totalTime / 60);
+    $sec = sprintf("%02d", $totalTime - ($min * 60));
+    $hrs = int($totalTime / 3600);
+    $minstr = $min . ":" . $sec;
+    $tstr = "";
+    if ($hrs > 0)
+    {
+        $min -= ($hrs * 60);
+        $min = sprintf("%02d", $min);
+        $tstr = $hrs . ":";
+    }
+    $tstr .= $min . ":" . $sec;
+    print "\nTotal time: ${tstr}";
+    if ($hrs > 0)
+    {
+        print " (${minstr})";
+    }
+    print "\n";
+}

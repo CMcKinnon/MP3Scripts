@@ -1,0 +1,61 @@
+#!/usr/bin/perl
+
+use MP3::Tag;
+use MP3::Info;
+use File::Basename;
+
+if ($#ARGV < 1)
+{
+    print "Usage: Combine dir1 dir2 ...\n";
+    exit(1);
+}
+
+$newdir = $ARGV[0];
+$newdir =~ s/_Disc_.//i;
+
+print "New directory will be: $newdir\n";
+
+if (! -d $newdir)
+{
+    print "Creating new directory\n";
+    mkdir($newdir);
+}
+
+$copiedcover = 0;
+$tracknum = 1;
+
+while ($#ARGV >= 0)
+{
+    $dir = shift;
+    print "Processing directory $dir\n";
+    if ($copiedcover == 0)
+    {
+        print "  Copying cover image\n";
+        system("cp -p $dir/cover.jpg $newdir");
+        $copiedcover = 1;
+    }
+    print "  Processing mp3 files\n";
+    while (<$dir/*.mp3>)
+    {
+	print "    $_\n";
+        ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks) = stat($_);
+	system("cp $_ $newdir");
+	$filename = basename($_);
+	$file = $newdir . "/" . basename($_);
+        $mp3 = MP3::Tag->new($file);
+        $mp3->get_tags();
+	$v2 = $mp3->{ID3v2};
+	$album = $v2->get_frame("TALB");
+	$album =~ s/ Disc .$//i;
+	$v2->change_frame("TALB", $album);
+        $v2->change_frame("TRCK", $tracknum);
+	$v2->write_tag();
+	$mp3->close();
+	$filename = substr($filename, 2);
+	$newname = $newdir . "/". sprintf("%02d", $tracknum) . $filename;
+        rename($file, $newname);
+        utime $atime, $mtime, $newname;
+        print "      New name: $newname\n";
+        $tracknum++;
+    }
+}

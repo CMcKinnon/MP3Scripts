@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+
+use MP3::Tag;
+use MP3::Info;
+
+while(<*.mp3>)
+{
+    $tn = int(substr($_, 0, 2));
+    print "id3v2 -2 -T $tn '$_'\n";
+}
